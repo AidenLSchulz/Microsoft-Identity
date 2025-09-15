@@ -1,4 +1,4 @@
-name: Deploy to Azure App Service
+name: Deploy ASP.NET MVC to Azure
 
 on:
   push:
