@@ -18,24 +18,19 @@ on:
         type: string
 
 env:
-  # --- Common settings ---
   DOTNET_VERSION: '8.0.x'
   PROJECT_PATH: MicrosoftIdentityAsgSchulz/MicrosoftIdentityAsgSchulz.csproj
   PUBLISH_DIR: ./publish
 
-  # --- Your Azure names ---
+  # your instructor's resources
   RG: rg-WebProgramming1-Fall2025-bs
   WEBAPP: wp1-17225389-fa25
   SLOT: container-demo
 
-  # --- ACR name (no domain). Ask instructor if unknown. Example: classfa25acr ---
+  # TODO #1: set to the class ACR name (no ".azurecr.io")
   ACR_NAME: TODO_PUT_ACR_NAME_HERE
 
 jobs:
-
-  # =======================
-  # CODE DEPLOY (Production)
-  # =======================
   build_code:
     name: Build (.NET) for Production
     runs-on: ubuntu-latest
@@ -43,32 +38,19 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'code')
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache NuGet
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Restore
-        run: dotnet restore "${{ env.PROJECT_PATH }}"
-
-      - name: Build
-        run: dotnet build "${{ env.PROJECT_PATH }}" -c Release --no-restore
-
-      - name: Publish
-        run: dotnet publish "${{ env.PROJECT_PATH }}" -c Release --no-build -o "${{ env.PUBLISH_DIR }}"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - run: dotnet restore "${{ env.PROJECT_PATH }}"
+      - run: dotnet build   "${{ env.PROJECT_PATH }}" -c Release --no-restore
+      - run: dotnet publish "${{ env.PROJECT_PATH }}" -c Release --no-build -o "${{ env.PUBLISH_DIR }}"
+      - uses: actions/upload-artifact@v4
         with:
           name: dotnet-app
           path: ${{ env.PUBLISH_DIR }}
@@ -81,13 +63,13 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'code')
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dotnet-app
-          path: ${{ env.PUBLISH_DIR }}
+        #  path defaults to ./dotnet-app; we use PUBLISH_DIR below
+      - run: mkdir -p "${{ env.PUBLISH_DIR }}" && cp -R dotnet-app/* "${{ env.PUBLISH_DIR }}/"
 
-      - name: Azure login (Service Principal)
+      - name: Azure login (Service Principal - client secret)
         uses: azure/login@v2
         with:
           creds: |
@@ -104,9 +86,6 @@ jobs:
           app-name: ${{ env.WEBAPP }}
           package: ${{ env.PUBLISH_DIR }}
 
-  # =======================
-  # CONTAINER DEPLOY (Slot)
-  # =======================
   build_and_deploy_container:
     name: Build & Deploy Container to Slot
     runs-on: ubuntu-latest
@@ -124,10 +103,9 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Azure login (Service Principal)
+      - name: Azure login (Service Principal - client secret)
         uses: azure/login@v2
         with:
           creds: |
@@ -156,15 +134,9 @@ jobs:
             -g $RG -n $WEBAPP --slot $SLOT \
             --docker-custom-image-name $ACR_NAME.azurecr.io/$IMAGE_NAME:${TAG} \
             --docker-registry-server-url https://$ACR_NAME.azurecr.io
-
           az webapp config set -g $RG -n $WEBAPP --slot $SLOT \
             --generic-configurations '{"acrUseManagedIdentityCreds": true}'
-
           az webapp config appsettings set -g $RG -n $WEBAPP --slot $SLOT \
             --settings WEBSITES_PORT=8080
-
       - name: Restart slot
         run: az webapp restart -g $RG -n $WEBAPP --slot $SLOT
-
-      - name: Show container config (sanity)
-        run: az webapp config container show -g $RG -n $WEBAPP --slot $SLOT -o jsonc
