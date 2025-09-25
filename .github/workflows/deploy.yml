@@ -2,33 +2,45 @@ name: Deploy ASP.NET MVC to Azure
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master" ]   # change to "main" if your default branch is main
   workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: wp1-17225389-fa25
+  PROJECT_PATH: MicrosoftIdentityAsgSchulz/MicrosoftIdentityAsgSchulz.csproj
+  PUBLISH_DIR: ./publish
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
+      id-token: write        # required for OIDC
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - run: dotnet restore
-      - run: dotnet publish MicrosoftIdentityAsgSchulz/MicrosoftIdentityAsgSchulz.csproj -c Release -o ./publish
+      - name: Restore
+        run: dotnet restore "${{ env.PROJECT_PATH }}"
 
-      - name: Azure login
+      - name: Publish
+        run: dotnet publish "${{ env.PROJECT_PATH }}" -c Release -o "${{ env.PUBLISH_DIR }}"
+
+      - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: wp1-17225389-fa25
-          package: ./publish
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: ${{ env.PUBLISH_DIR }}
