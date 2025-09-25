@@ -18,7 +18,7 @@ on:
         type: string
 
 env:
-  # --- Common vars ---
+  # --- Common settings ---
   DOTNET_VERSION: '8.0.x'
   PROJECT_PATH: MicrosoftIdentityAsgSchulz/MicrosoftIdentityAsgSchulz.csproj
   PUBLISH_DIR: ./publish
@@ -28,7 +28,7 @@ env:
   WEBAPP: wp1-17225389-fa25
   SLOT: container-demo
 
-  # --- Set your ACR name (no domain). Ask instructor if unknown. Example: classfa25acr ---
+  # --- ACR name (no domain). Ask instructor if unknown. Example: classfa25acr ---
   ACR_NAME: TODO_PUT_ACR_NAME_HERE
 
 jobs:
@@ -36,13 +36,12 @@ jobs:
   # =======================
   # CODE DEPLOY (Production)
   # =======================
-
   build_code:
     name: Build (.NET) for Production
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.target == 'code')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'code')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,9 +79,7 @@ jobs:
     needs: build_code
     if: |
       github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.target == 'code')
-    env:
-      AZURE_WEBAPP_NAME: ${{ env.WEBAPP }}
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'code')
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -104,27 +101,26 @@ jobs:
       - name: Deploy to App Service (Production)
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          app-name: ${{ env.WEBAPP }}
           package: ${{ env.PUBLISH_DIR }}
 
   # =======================
   # CONTAINER DEPLOY (Slot)
   # =======================
-
   build_and_deploy_container:
     name: Build & Deploy Container to Slot
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'container'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'container'
     permissions:
       contents: read
       id-token: write
     env:
-      IMAGE_NAME: ${{ inputs.image_name }}
+      IMAGE_NAME: ${{ github.event.inputs.image_name }}
     steps:
-      - name: Sanity check ACR name
+      - name: Check ACR name is set
         run: |
-          if [ "${{ env.ACR_NAME }}" = "TODO_PUT_ACR_NAME_HERE" ] || [ -z "${{ env.ACR_NAME }}" ]; then
-            echo "ERROR: Set env.ACR_NAME in this workflow to your actual ACR name (no domain)."
+          if [ -z "${{ env.ACR_NAME }}" ] || [ "${{ env.ACR_NAME }}" = "TODO_PUT_ACR_NAME_HERE" ]; then
+            echo "ERROR: Set env.ACR_NAME at top of workflow to your ACR name (no .azurecr.io)."
             exit 1
           fi
 
@@ -161,11 +157,9 @@ jobs:
             --docker-custom-image-name $ACR_NAME.azurecr.io/$IMAGE_NAME:${TAG} \
             --docker-registry-server-url https://$ACR_NAME.azurecr.io
 
-          # Use Managed Identity for ACR pulls
           az webapp config set -g $RG -n $WEBAPP --slot $SLOT \
             --generic-configurations '{"acrUseManagedIdentityCreds": true}'
 
-          # Ensure ASP.NET listens on the right port
           az webapp config appsettings set -g $RG -n $WEBAPP --slot $SLOT \
             --settings WEBSITES_PORT=8080
 
